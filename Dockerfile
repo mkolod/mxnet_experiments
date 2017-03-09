@@ -15,6 +15,9 @@ RUN apt-get -y install maven openjdk-8-jdk scala
 RUN cd /opt/mxnet && make scalapkg && make scalainstall
 #RUN make scalainstall
 
+# Python3 support
+RUN apt-get -y install python3-pip
+
 COPY jupyter_notebook_config.py /root/.jupyter/jupyter_notebook_config.py
 #RUN cd /workspace
 
