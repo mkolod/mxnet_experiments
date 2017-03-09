@@ -17,6 +17,7 @@ RUN cd /opt/mxnet && make scalapkg && make scalainstall
 
 # Python3 support
 RUN apt-get -y install python3-pip
+RUN pip3 install numpy
 
 COPY jupyter_notebook_config.py /root/.jupyter/jupyter_notebook_config.py
 #RUN cd /workspace
