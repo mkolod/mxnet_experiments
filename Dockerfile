@@ -38,6 +38,6 @@ RUN apt-get -y install maven openjdk-8-jdk scala
 RUN cd /root/mxnet && make scalapkg && make scalainstall
 
 # Build MxNet for R - WIP !!!
-RUN apt-get install r-base r-base-dev
+RUN apt-get -y install r-base r-base-dev
 
 WORKDIR /root/mxnet
