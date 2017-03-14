@@ -1,26 +1,43 @@
-FROM nvdl.githost.io:4678/dgx/mxnet:17.04-devel
+FROM nvidia/cuda:8.0-cudnn5-devel
 
-# install R support
-RUN apt-get update && apt-get -y upgrade
-RUN apt-get -y install r-base r-base-dev sudo
+RUN apt-get update && apt-get -y upgrade && \
+  apt-get install -y \
+  git \
+  libopenblas-dev \
+  libopencv-dev \
+  python-dev \
+  python-numpy \
+  python-setuptools \
+  wget \
+  python-pip \
+  unzip \ 
+  sudo
 
-#RUN HOME=/opt bash /opt/mxnet/setup-utils/install-mxnet-ubuntu-r.sh
-
-# install Jupyter notebook
-RUN pip install jupyter
-
-# install Scala support
-RUN cd /opt/mxnet
-RUN apt-get -y install maven openjdk-8-jdk scala
-RUN cd /opt/mxnet && make scalapkg && make scalainstall
-#RUN make scalainstall
+# Build MxNet for Python
+RUN cd /root && git clone --recursive https://github.com/dmlc/mxnet && cd mxnet && \
+  cp make/config.mk . && \
+  sed -i 's/USE_BLAS = atlas/USE_BLAS = openblas/g' config.mk && \
+  sed -i 's/USE_CUDA = 0/USE_CUDA = 1/g' config.mk && \
+  sed -i 's/USE_CUDA_PATH = NONE/USE_CUDA_PATH = \/usr\/local\/cuda/g' config.mk && \
+  sed -i 's/USE_CUDNN = 0/USE_CUDNN = 1/g' config.mk && \
+  make -j"$(nproc)"
 
 # Python3 support
 RUN apt-get -y install python3-pip
 RUN pip3 install numpy
 
+# Jupyter notebook support
+RUN pip install jupyter
 COPY jupyter_notebook_config.py /root/.jupyter/jupyter_notebook_config.py
-#RUN cd /workspace
-
-# expose port for Jupyter notebook
 EXPOSE 8888
+
+ENV PYTHONPATH /root/mxnet/python
+
+# Build MxNet for Scala
+RUN apt-get -y install maven openjdk-8-jdk scala
+RUN cd /root/mxnet && make scalapkg && make scalainstall
+
+# Build MxNet for R - WIP !!!
+RUN apt-get install r-base r-base-dev
+
+WORKDIR /root/mxnet
