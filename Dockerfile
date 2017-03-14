@@ -11,7 +11,8 @@ RUN apt-get update && apt-get -y upgrade && \
   wget \
   python-pip \
   unzip \ 
-  sudo
+  sudo \
+  vim
 
 # Build MxNet for Python
 RUN cd /root && git clone --recursive https://github.com/dmlc/mxnet && cd mxnet && \
