@@ -46,7 +46,7 @@ parser.add_argument('--disp-batches', type=int, default=50,
 parser.add_argument('--stack-rnn', default=False,
                     help='stack fused RNN cells to reduce communication overhead')
 parser.add_argument('--dropout', type=float, default='0.0',
-                    help='dropout keep probability')
+                    help='dropout probability (1.0 - keep probability)')
 
 #buckets = [32]
 buckets = [10, 20, 30, 40, 50, 60]
@@ -78,7 +78,7 @@ def train(args):
     if args.stack_rnn:
         stack = mx.rnn.SequentialRNNCell()
         for layer in range(args.num_layers):
-            dropout = 0.0
+            dropout = 1.0
             if layer < (args.num_layers - 1):
                 dropout = args.dropout
             stack.add(mx.rnn.FusedRNNCell(args.num_hidden, num_layers=1,
