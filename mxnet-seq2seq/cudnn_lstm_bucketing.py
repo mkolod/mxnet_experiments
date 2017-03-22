@@ -120,15 +120,21 @@ def train(args):
         arg_params = None
         aux_params = None
 
+    opt_params = {
+      'learning_rate': args.lr,
+      'wd': args.wd
+    }
+
+    if args.optimizer not in ['adadelta', 'adagrad', 'adam', 'rmsprop']:
+        opt_params['momentum'] = args.mom
+
     model.fit(
         train_data          = data_train,
         eval_data           = data_val,
         eval_metric         = mx.metric.Perplexity(invalid_label),
         kvstore             = args.kv_store,
         optimizer           = args.optimizer,
-        optimizer_params    = { 'learning_rate': args.lr,
-                                'momentum': args.mom,
-                                'wd': args.wd },
+        optimizer_params    = opt_params, 
         initializer         = mx.init.Xavier(factor_type="in", magnitude=2.34),
         arg_params          = arg_params,
         aux_params          = aux_params,
@@ -243,51 +249,41 @@ def infer(args):
     _, arg_params, aux_params = mx.rnn.load_rnn_checkpoint(stack, args.model_prefix, args.load_epoch)
     model.set_params(arg_params, aux_params)
 
-#    val_sent, _ = tokenize_text("./data/ptb.test.txt", vocab=vocab, start_label=start_label,
-#                                invalid_label=invalid_label)
-#    data_val    = mx.rnn.BucketSentenceIter(val_sent, args.batch_size, buckets=buckets,
-#                                            invalid_label=invalid_label, layout=layout)
-
     inv_vocab = ivd = {v: k for k, v in vocab.items()}
-    num_batch = 1
+    num_batch = None 
+    batch_size = args.batch_size
+
     for nbatch, eval_batch in enumerate(data_val):
         if num_batch is not None and nbatch == num_batch:
             break
         data = eval_batch.data[0]
         model.forward(eval_batch, is_train=False)
         preds = model.get_outputs()[0].asnumpy()
-#        print(preds)
-        print(np.shape(preds))
 
-        curr_idx = 0
-  
-        for sent in range(data.shape[1]):
+        print("Number of sentences in batch %d: %d" % (nbatch, data.shape[1])) 
+
+        for idx in range(data.shape[0]):
             print("") 
-            sent = data[sent]
+            sent = data[idx]
             asnp = sent.asnumpy()
             in_text = []
-            for idx in asnp:
-                in_text.append(inv_vocab[idx])
+            for idx2 in asnp:
+                in_text.append(inv_vocab[idx2])
             in_text = ' '.join(in_text).strip()
             print("Input sentence: %s" % in_text)
             out_text = []
-            while True:
-                if curr_idx >= np.shape(asnp)[0]:
-                    break
-                argmax = np.argmax(preds[curr_idx, :])
-                curr_idx += 1
-                out_text.append(inv_vocab[argmax])
+            offset = batch_size * idx
+            if offset >= preds.shape[0]:
+                break
+
+            for idx2 in range(offset, offset + batch_size - 1):
+                argmax = np.argmax(preds[idx2, :])
                 if argmax == 0:
-                    break
-            out_text = " ".join(out_text)
-            print(out_text)
+                    continue
+                out_text.append(inv_vocab[argmax])
+            out_text = " ".join(out_text).strip()
+            print("Output sentence: %s" % out_text)
             
-#        print(eval_batch.data)
-#        model.forward(eval_batch, is_train=False)
-#        print("nbatch = %d" % nbatch)
-#        print(model.get_outputs())
-
-
 if __name__ == '__main__':
     import logging
     head = '%(asctime)-15s %(message)s'
