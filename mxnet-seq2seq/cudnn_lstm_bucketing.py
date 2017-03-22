@@ -223,6 +223,8 @@ def infer(args):
                                  output_dim=args.num_embed, name='embed')
 
         stack.reset()
+        # don't unroll when predicting the whole sequence
+        # seq_len = 1
         outputs, states = stack.unroll(seq_len, inputs=embed, merge_outputs=True)
 
         pred = mx.sym.Reshape(outputs,
@@ -250,7 +252,7 @@ def infer(args):
     model.set_params(arg_params, aux_params)
 
     inv_vocab = ivd = {v: k for k, v in vocab.items()}
-    num_batch = None 
+    num_batch = 1  # None 
     batch_size = args.batch_size
 
     for nbatch, eval_batch in enumerate(data_val):
@@ -258,9 +260,10 @@ def infer(args):
             break
         data = eval_batch.data[0]
         model.forward(eval_batch, is_train=False)
-        preds = model.get_outputs()[0].asnumpy()
-
-        print("Number of sentences in batch %d: %d" % (nbatch, data.shape[1])) 
+        preds = model.get_outputs()[0] #.asnumpy()
+        preds = mx.ndarray.argmax(preds, axis=1).asnumpy()
+        words_per_sent = data.shape[1]
+        print("Number of words per sentence in batch %d: %d" % (nbatch, words_per_sent)) 
 
         for idx in range(data.shape[0]):
             print("") 
@@ -272,16 +275,10 @@ def infer(args):
             in_text = ' '.join(in_text).strip()
             print("Input sentence: %s" % in_text)
             out_text = []
-            offset = batch_size * idx
-            if offset >= preds.shape[0]:
-                break
-
-            for idx2 in range(offset, offset + batch_size - 1):
-                argmax = np.argmax(preds[idx2, :])
-                if argmax == 0:
-                    continue
-                out_text.append(inv_vocab[argmax])
-            out_text = " ".join(out_text).strip()
+            offset = idx * batch_size
+            for idx2 in range(offset, offset + words_per_sent):
+                out_text.append(inv_vocab[preds[idx2]])
+            out_text = " ".join(out_text).replace('\n', '')
             print("Output sentence: %s" % out_text)
             
 if __name__ == '__main__':
