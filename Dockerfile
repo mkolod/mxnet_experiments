@@ -15,7 +15,8 @@ RUN apt-get update && apt-get -y upgrade && \
   vim
 
 # Build MxNet for Python
-RUN cd /root && git clone --recursive https://github.com/dmlc/mxnet && cd mxnet && \
+RUN cd /root && git clone --recursive https://github.com/piiswrong/mxnet.git && cd mxnet && git checkout att && \
+# https://github.com/dmlc/mxnet && cd mxnet && \
   cp make/config.mk . && \
   sed -i 's/USE_BLAS = atlas/USE_BLAS = openblas/g' config.mk && \
   sed -i 's/USE_CUDA = 0/USE_CUDA = 1/g' config.mk && \
@@ -35,10 +36,10 @@ EXPOSE 8888
 ENV PYTHONPATH /root/mxnet/python
 
 # Build MxNet for Scala
-RUN apt-get -y install maven openjdk-8-jdk scala
-RUN cd /root/mxnet && make scalapkg && make scalainstall
+#RUN apt-get -y install maven openjdk-8-jdk scala
+#RUN cd /root/mxnet && make scalapkg && make scalainstall
 
 # Build MxNet for R - WIP !!!
-RUN apt-get -y install r-base r-base-dev
+#RUN apt-get -y install r-base r-base-dev
 
 WORKDIR /root/mxnet
