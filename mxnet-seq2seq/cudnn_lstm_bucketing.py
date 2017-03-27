@@ -4,9 +4,6 @@ import argparse
 
 parser = argparse.ArgumentParser(description="Train RNN on Penn Tree Bank",
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-
-parser.add_argument('--infer', default=False, action='store_true',
-                    help='whether to do inference')
 parser.add_argument('--test', default=False, action='store_true',
                     help='whether to do testing instead of training')
 parser.add_argument('--model-prefix', type=str, default=None,
@@ -48,6 +45,8 @@ parser.add_argument('--disp-batches', type=int, default=50,
 # multiple GPUs.
 parser.add_argument('--stack-rnn', default=False,
                     help='stack fused RNN cells to reduce communication overhead')
+parser.add_argument('--dropout', type=float, default='0.0',
+                    help='dropout probability (1.0 - keep probability)')
 
 #buckets = [32]
 buckets = [10, 20, 30, 40, 50, 60]
@@ -76,49 +75,68 @@ def get_data(layout):
 
 def train(args):
     data_train, data_val, vocab = get_data('TN')
-    if args.stack_rnn:
-        stack = mx.rnn.SequentialRNNCell()
-        for layer in range(args.num_layers):
-            stack.add(mx.rnn.FusedRNNCell(args.num_hidden, num_layers=1,
-                    mode='lstm', prefix='lstm_%d'%layer,
-                    bidirectional=args.bidirectional))
-        cell = stack
-    else:
-        cell = mx.rnn.FusedRNNCell(args.num_hidden, num_layers=args.num_layers,
-                mode='lstm', bidirectional=args.bidirectional)
+
+    encoder = mx.rnn.SequentialRNNCell()
+    encoder.add(mx.rnn.LSTMCell(args.num_hidden, prefix='rnn_encoder0_'))
+    encoder.add(mx.rnn.AttentionEncoderCell())
+
+    decoder = mx.rnn.SequentialRNNCell()
+    decoder.add(mx.rnn.LSTMCell(args.num_hidden, prefix='rnn_decoder0_'))
+    decoder.add(mx.rnn.DotAttentionCell())
+
+#    encoder_data = mx.sym.Variable('encoder_data')
+#    decoder_data = mx.sym.Variable('decoder_data')
+
+    # assert outputs.list_outputs() == ['rnn_stack4_t0_out_output', 'rnn_stack4_t1_out_output', 'rnn_stack4_t2_out_output']
+    # args, outs, auxs = outputs.infer_shape(encoder_data=(10, 3, 50), decoder_data=(10, 3, 50))
 
     def sym_gen(seq_len):
         data = mx.sym.Variable('data')
         label = mx.sym.Variable('softmax_label')
-        embed = mx.sym.Embedding(data=data, input_dim=len(vocab), output_dim=args.num_embed,name='embed')
+        embed = mx.sym.Embedding(data=data, input_dim=len(vocab),
+                                 output_dim=args.num_embed, name='embed') #args.num_embed
 
-        output, _ = cell.unroll(seq_len, inputs=embed, merge_outputs=True, layout='TNC')
+        encoder.reset()
+        decoder.reset()
 
-        pred = mx.sym.Reshape(output,
-                shape=(-1, args.num_hidden*(1+args.bidirectional)))
+        _, states = encoder.unroll(seq_len, inputs=embed)
+        outputs, _ = decoder.unroll(seq_len, inputs=embed, begin_state=states, merge_outputs=True)
+        print("\n\n%s\n\n" % outputs)
+
+        pred = mx.sym.Reshape(outputs,
+                shape=(-1, args.num_hidden))
         pred = mx.sym.FullyConnected(data=pred, num_hidden=len(vocab), name='pred')
+        print(pred)
 
         label = mx.sym.Reshape(label, shape=(-1,))
+
+#        pred = outputs
         pred = mx.sym.SoftmaxOutput(data=pred, label=label, name='softmax')
 
         return pred, ('data',), ('softmax_label',)
+
 
     if args.gpus:
         contexts = [mx.gpu(int(i)) for i in args.gpus.split(',')]
     else:
         contexts = mx.cpu(0)
+ 
+#    foo, bar, baz = sym_gen(10)
+#    print(foo)
+#    print(bar)
+#    print(baz)
 
     model = mx.mod.BucketingModule(
         sym_gen             = sym_gen,
         default_bucket_key  = data_train.default_bucket_key,
         context             = contexts)
 
-    if args.load_epoch:
-        _, arg_params, aux_params = mx.rnn.load_rnn_checkpoint(
-            cell, args.model_prefix, args.load_epoch)
-    else:
-        arg_params = None
-        aux_params = None
+#    if args.load_epoch:
+#        _, arg_params, aux_params = mx.rnn.load_rnn_checkpoint(
+#            cell, args.model_prefix, args.load_epoch)
+#    else:
+    arg_params = None
+    aux_params = None
 
     opt_params = {
       'learning_rate': args.lr,
@@ -141,26 +159,26 @@ def train(args):
         begin_epoch         = args.load_epoch,
         num_epoch           = args.num_epochs,
         batch_end_callback  = mx.callback.Speedometer(args.batch_size, args.disp_batches),
-        epoch_end_callback  = mx.rnn.do_rnn_checkpoint(cell, args.model_prefix, 1)
+        epoch_end_callback  = mx.rnn.do_rnn_checkpoint(decoder, args.model_prefix, 1)
                               if args.model_prefix else None)
 
 def test(args):
     assert args.model_prefix, "Must specifiy path to load from"
     _, data_val, vocab = get_data('NT')
 
-    if not args.stack_rnn:
-        stack = mx.rnn.FusedRNNCell(args.num_hidden, num_layers=args.num_layers,
-                mode='lstm', bidirectional=args.bidirectional).unfuse()
-    else:
-        stack = mx.rnn.SequentialRNNCell()
-        for i in range(args.num_layers):
-            cell = mx.rnn.LSTMCell(num_hidden=args.num_hidden, prefix='lstm_%dl0_'%i)
-            if args.bidirectional:
-                cell = mx.rnn.BidirectionalCell(
-                        cell,
-                        mx.rnn.LSTMCell(num_hidden=args.num_hidden, prefix='lstm_%dr0_'%i),
-                        output_prefix='bi_lstm_%d'%i)
-            stack.add(cell)
+    encoder = mx.rnn.SequentialRNNCell()
+    encoder.add(mx.rnn.LSTMCell(args.num_hidden, prefix='rnn_encoder0_'))
+    encoder.add(mx.rnn.AttentionEncoderCell())
+
+    decoder = mx.rnn.SequentialRNNCell()
+    decoder.add(mx.rnn.LSTMCell(args.num_hidden, prefix='rnn_decoder0_'))
+    decoder.add(mx.rnn.DotAttentionCell())
+
+#    encoder_data = mx.sym.Variable('encoder_data')
+    decoder_data = mx.sym.Variable('decoder_data')
+
+    # assert outputs.list_outputs() == ['rnn_stack4_t0_out_output', 'rnn_stack4_t1_out_output', 'rnn_stack4_t2_out_output']
+    # args, outs, auxs = outputs.infer_shape(encoder_data=(10, 3, 50), decoder_data=(10, 3, 50))
 
     def sym_gen(seq_len):
         data = mx.sym.Variable('data')
@@ -168,8 +186,18 @@ def test(args):
         embed = mx.sym.Embedding(data=data, input_dim=len(vocab),
                                  output_dim=args.num_embed, name='embed')
 
-        stack.reset()
-        outputs, states = stack.unroll(seq_len, inputs=embed, merge_outputs=True)
+        encoder.reset()
+        decoder.reset()
+
+        _, states = encoder.unroll(seq_len, inputs=embed)
+        outputs, _ = decoder.unroll(seq_len, inputs=embed, begin_state=states)
+        outputs = mx.sym.Group(outputs)
+        print(type(outputs[0]))
+
+#        args, outs, auxs = outputs.infer_shape(encoder_data=(10, 3, 50), decoder_data=(10, 3, 50))
+#        print("args: %s" % args)
+#        print("outs: %s" % outs)
+#        print("auxs: %s" % auxs)
 
         pred = mx.sym.Reshape(outputs,
                 shape=(-1, args.num_hidden*(1+args.bidirectional)))
@@ -180,16 +208,21 @@ def test(args):
 
         return pred, ('data',), ('softmax_label',)
 
+    foo, bar, baz = sym_gen(10)
+    print(foo)
+    print(bar)
+    print(baz)
+
     if args.gpus:
         contexts = [mx.gpu(int(i)) for i in args.gpus.split(',')]
     else:
         contexts = mx.cpu(0)
 
-    model = mx.mod.BucketingModule(
-        sym_gen             = sym_gen,
-        default_bucket_key  = data_val.default_bucket_key,
-        context             = contexts)
-    model.bind(data_val.provide_data, data_val.provide_label, for_training=False)
+#    model = mx.mod.BucketingModule(
+#        sym_gen             = sym_gen,
+#        default_bucket_key  = data_val.default_bucket_key,
+#        context             = contexts)
+#    model.bind(data_val.provide_data, data_val.provide_label, for_training=False)
 
     # note here we load using SequentialRNNCell instead of FusedRNNCell.
     _, arg_params, aux_params = mx.rnn.load_rnn_checkpoint(stack, args.model_prefix, args.load_epoch)
@@ -198,89 +231,6 @@ def test(args):
     model.score(data_val, mx.metric.Perplexity(invalid_label),
                 batch_end_callback=mx.callback.Speedometer(args.batch_size, 5))
 
-def infer(args):
-    assert args.model_prefix, "Must specifiy path to load from"
-    _, data_val, vocab = get_data('NT')
-
-    if not args.stack_rnn:
-        stack = mx.rnn.FusedRNNCell(args.num_hidden, num_layers=args.num_layers,
-                mode='lstm', bidirectional=args.bidirectional).unfuse()
-    else:
-        stack = mx.rnn.SequentialRNNCell()
-        for i in range(args.num_layers):
-            cell = mx.rnn.LSTMCell(num_hidden=args.num_hidden, prefix='lstm_%dl0_'%i)
-            if args.bidirectional:
-                cell = mx.rnn.BidirectionalCell(
-                        cell,
-                        mx.rnn.LSTMCell(num_hidden=args.num_hidden, prefix='lstm_%dr0_'%i),
-                        output_prefix='bi_lstm_%d'%i)
-            stack.add(cell)
-
-    def sym_gen(seq_len):
-        data = mx.sym.Variable('data')
-        label = mx.sym.Variable('softmax_label')
-        embed = mx.sym.Embedding(data=data, input_dim=len(vocab),
-                                 output_dim=args.num_embed, name='embed')
-
-        stack.reset()
-        # don't unroll when predicting the whole sequence
-        # seq_len = 1
-        outputs, states = stack.unroll(seq_len, inputs=embed, merge_outputs=True)
-
-        pred = mx.sym.Reshape(outputs,
-                shape=(-1, args.num_hidden*(1+args.bidirectional)))
-        pred = mx.sym.FullyConnected(data=pred, num_hidden=len(vocab), name='pred')
-
-        label = mx.sym.Reshape(label, shape=(-1,))
-        pred = mx.sym.SoftmaxOutput(data=pred, label=label, name='softmax')
-
-        return pred, ('data',), ('softmax_label',)
-
-    if args.gpus:
-        contexts = [mx.gpu(int(i)) for i in args.gpus.split(',')]
-    else:
-        contexts = mx.cpu(0)
-
-    model = mx.mod.BucketingModule(
-        sym_gen             = sym_gen,
-        default_bucket_key  = data_val.default_bucket_key,
-        context             = contexts)
-    model.bind(data_val.provide_data, data_val.provide_label, for_training=False)
-
-    # note here we load using SequentialRNNCell instead of FusedRNNCell.
-    _, arg_params, aux_params = mx.rnn.load_rnn_checkpoint(stack, args.model_prefix, args.load_epoch)
-    model.set_params(arg_params, aux_params)
-
-    inv_vocab = ivd = {v: k for k, v in vocab.items()}
-    num_batch = 1  # None 
-    batch_size = args.batch_size
-
-    for nbatch, eval_batch in enumerate(data_val):
-        if num_batch is not None and nbatch == num_batch:
-            break
-        data = eval_batch.data[0]
-        model.forward(eval_batch, is_train=False)
-        preds = model.get_outputs()[0] #.asnumpy()
-        preds = mx.ndarray.argmax(preds, axis=1).asnumpy()
-        words_per_sent = data.shape[1]
-        print("Number of words per sentence in batch %d: %d" % (nbatch, words_per_sent)) 
-
-        for idx in range(data.shape[0]):
-            print("") 
-            sent = data[idx]
-            asnp = sent.asnumpy()
-            in_text = []
-            for idx2 in asnp:
-                in_text.append(inv_vocab[idx2])
-            in_text = ' '.join(in_text).strip()
-            print("Input sentence: %s" % in_text)
-            out_text = []
-            offset = idx * batch_size
-            for idx2 in range(offset, offset + words_per_sent):
-                out_text.append(inv_vocab[preds[idx2]])
-            out_text = " ".join(out_text).replace('\n', '')
-            print("Output sentence: %s" % out_text)
-            
 if __name__ == '__main__':
     import logging
     head = '%(asctime)-15s %(message)s'
@@ -291,9 +241,7 @@ if __name__ == '__main__':
     if args.num_layers >= 4 and len(args.gpus.split(',')) >= 4 and not args.stack_rnn:
         print('WARNING: stack-rnn is recommended to train complex model on multiple GPUs')
 
-    if args.infer:
-        infer(args)
-    elif args.test:
+    if args.test:
         # Demonstrates how to load a model trained with CuDNN RNN and predict
         # with non-fused MXNet symbol
         test(args)
