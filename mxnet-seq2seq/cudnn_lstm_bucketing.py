@@ -2,6 +2,9 @@ import numpy as np
 import mxnet as mx
 import argparse
 
+import re
+from unidecode import unidecode
+
 parser = argparse.ArgumentParser(description="Train RNN on Penn Tree Bank",
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('--test', default=False, action='store_true',
@@ -49,14 +52,21 @@ parser.add_argument('--dropout', type=float, default='0.0',
                     help='dropout probability (1.0 - keep probability)')
 
 #buckets = [32]
-buckets = [10, 20, 30, 40, 50, 60]
+buckets = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
 
 start_label = 1
 invalid_label = 0
 
-def tokenize_text(fname, vocab=None, invalid_label=-1, start_label=0):
-    lines = open(fname).readlines()
-    lines = [filter(None, i.split(' ')) for i in lines]
+#def tokenize_text(fname, vocab=None, invalid_label=-1, start_label=0):
+#    lines = open(fname).readlines()
+#    lines = [filter(None, i.split(' ')) for i in lines]
+#    sentences, vocab = mx.rnn.encode_sentences(lines, vocab=vocab, invalid_label=invalid_label, start_label=start_label)
+#    return sentences, vocab
+
+def tokenize_text(fname, vocab=None, invalid_label=-1, start_label=0, sep_punctuation=True):
+    lines = unidecode(open(fname).read().decode('utf-8')).split('\n')
+    lines = [x for x in lines if x]
+    lines = map(lambda x: re.findall(r"\w+|[^\w\s]", x, re.UNICODE), lines)    
     sentences, vocab = mx.rnn.encode_sentences(lines, vocab=vocab, invalid_label=invalid_label, start_label=start_label)
     return sentences, vocab
 
@@ -67,10 +77,18 @@ def get_data(layout):
                                       invalid_label=invalid_label)
     val_sent, _ = tokenize_text(target_data, vocab=None, start_label=start_label, # vocab, start_label=start_label,
                                 invalid_label=invalid_label)
+  
+    # only keep sentences of the same length, until the dual-bucketing issue is resolved
 
-    data_train  = mx.rnn.BucketSentenceIter(train_sent, args.batch_size, buckets=buckets,
+    train_sent, val_sent = zip(*filter(lambda x: len(x[0]) == len(x[1]), zip(train_sent, val_sent)))
+
+
+    # input should be reversed - this is a pure side effect
+    # [i.reverse() for i in train_sent]
+
+    data_train  = mx.rnn.BucketSentenceIter(train_sent, args.batch_size, buckets=None, #buckets,
                                             invalid_label=invalid_label, layout=layout)
-    data_val    = mx.rnn.BucketSentenceIter(val_sent, args.batch_size, buckets=buckets,
+    data_val    = mx.rnn.BucketSentenceIter(val_sent, args.batch_size, buckets=None, #buckets,
                                             invalid_label=invalid_label, layout=layout)
     return data_train, data_val, vocab
 
@@ -82,7 +100,7 @@ def train(args):
 
     for i in range(args.num_layers):
         encoder.add(mx.rnn.LSTMCell(args.num_hidden, prefix='rnn_encoder%d_' % i))
-        if i > 0 and i < (args.num_layers - 1) and args.dropout > 0.0:
+        if i < args.num_layers - 1 and args.dropout > 0.0:
             encoder.add(mx.rnn.DropoutCell(args.dropout, prefix='rnn_encoder%d_' % i))
     encoder.add(mx.rnn.AttentionEncoderCell())
 
@@ -92,7 +110,7 @@ def train(args):
     decoder = mx.rnn.SequentialRNNCell()
     for i in range(args.num_layers):
         decoder.add(mx.rnn.LSTMCell(args.num_hidden, prefix=('rnn_decoder%d_' % i)))
-        if i > 0 and i < (args.num_layers - 1) and args.dropout > 0.0:
+        if i < args.num_layers - 1 and args.dropout > 0.0:
             decoder.add(mx.rnn.DropoutCell(args.dropout, prefix='rnn_decoder%d_' % i))
     decoder.add(mx.rnn.DotAttentionCell())
 
