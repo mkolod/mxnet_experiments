@@ -61,9 +61,11 @@ def tokenize_text(fname, vocab=None, invalid_label=-1, start_label=0):
     return sentences, vocab
 
 def get_data(layout):
-    train_sent, vocab = tokenize_text("./data/ptb.train.txt", start_label=start_label,
+    source_data = "./data/europarl-v7.es-en.es_small"  # ./data/ptb.train.txt
+    target_data = "./data/europarl-v7.es-en.en_small" # ./data/ptb.test.txt
+    train_sent, vocab = tokenize_text(source_data, start_label=start_label,
                                       invalid_label=invalid_label)
-    val_sent, _ = tokenize_text("./data/ptb.test.txt", vocab=vocab, start_label=start_label,
+    val_sent, _ = tokenize_text(target_data, vocab=None, start_label=start_label, # vocab, start_label=start_label,
                                 invalid_label=invalid_label)
 
     data_train  = mx.rnn.BucketSentenceIter(train_sent, args.batch_size, buckets=buckets,
@@ -77,11 +79,21 @@ def train(args):
     data_train, data_val, vocab = get_data('TN')
 
     encoder = mx.rnn.SequentialRNNCell()
-    encoder.add(mx.rnn.LSTMCell(args.num_hidden, prefix='rnn_encoder0_'))
+
+    for i in range(args.num_layers):
+        encoder.add(mx.rnn.LSTMCell(args.num_hidden, prefix='rnn_encoder%d_' % i))
+        if i > 0 and i < (args.num_layers - 1) and args.dropout > 0.0:
+            encoder.add(mx.rnn.DropoutCell(args.dropout, prefix='rnn_encoder%d_' % i))
     encoder.add(mx.rnn.AttentionEncoderCell())
 
+#    encoder = mx.rnn.FusedRNNCell(args.num_hidden, num_layers=args.num_layers, dropout=args.dropout,
+#                                   mode='lstm', bidirectional=args.bidirectional)
+
     decoder = mx.rnn.SequentialRNNCell()
-    decoder.add(mx.rnn.LSTMCell(args.num_hidden, prefix='rnn_decoder0_'))
+    for i in range(args.num_layers):
+        decoder.add(mx.rnn.LSTMCell(args.num_hidden, prefix=('rnn_decoder%d_' % i)))
+        if i > 0 and i < (args.num_layers - 1) and args.dropout > 0.0:
+            decoder.add(mx.rnn.DropoutCell(args.dropout, prefix='rnn_decoder%d_' % i))
     decoder.add(mx.rnn.DotAttentionCell())
 
 #    encoder_data = mx.sym.Variable('encoder_data')
@@ -101,19 +113,13 @@ def train(args):
 
         _, states = encoder.unroll(seq_len, inputs=embed, layout='TNC')
         outputs, _ = decoder.unroll(seq_len, inputs=embed, begin_state=states, merge_outputs=True, layout='TNC')
-        print("\n\n%s\n\n" % outputs)
 
         pred = mx.sym.Reshape(outputs,
                 shape=(-1, args.num_hidden))
         pred = mx.sym.FullyConnected(data=pred, num_hidden=len(vocab), name='pred')
-        print(pred)
 
         label = mx.sym.Reshape(label, shape=(-1,))
 
-#        arg_shape, output_shape, aux_shape = label.infer_shape(data=data)
-#        print("\n\n%s\n\n" % (arg_shape, output_shape, aux_shape))
-
-#        pred = outputs
         pred = mx.sym.SoftmaxOutput(data=pred, label=label, name='softmax')
 
         return pred, ('data',), ('softmax_label',)
@@ -124,22 +130,17 @@ def train(args):
     else:
         contexts = mx.cpu(0)
  
-#    foo, bar, baz = sym_gen(10)
-#    print(foo)
-#    print(bar)
-#    print(baz)
-
     model = mx.mod.BucketingModule(
         sym_gen             = sym_gen,
         default_bucket_key  = data_train.default_bucket_key,
         context             = contexts)
 
-#    if args.load_epoch:
-#        _, arg_params, aux_params = mx.rnn.load_rnn_checkpoint(
-#            cell, args.model_prefix, args.load_epoch)
-#    else:
-    arg_params = None
-    aux_params = None
+    if args.load_epoch:
+        _, arg_params, aux_params = mx.rnn.load_rnn_checkpoint(
+            cell, args.model_prefix, args.load_epoch)
+    else:
+        arg_params = None
+        aux_params = None
 
     opt_params = {
       'learning_rate': args.lr,
@@ -211,11 +212,6 @@ def test(args):
         pred = mx.sym.SoftmaxOutput(data=pred, label=label, name='softmax')
 
         return pred, ('data',), ('softmax_label',)
-
-    foo, bar, baz = sym_gen(60)
-    print(foo)
-    print(bar)
-    print(baz)
 
     if args.gpus:
         contexts = [mx.gpu(int(i)) for i in args.gpus.split(',')]
