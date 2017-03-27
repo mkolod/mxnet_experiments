@@ -99,8 +99,8 @@ def train(args):
         encoder.reset()
         decoder.reset()
 
-        _, states = encoder.unroll(seq_len, inputs=embed)
-        outputs, _ = decoder.unroll(seq_len, inputs=embed, begin_state=states, merge_outputs=True)
+        _, states = encoder.unroll(seq_len, inputs=embed, layout='TNC')
+        outputs, _ = decoder.unroll(seq_len, inputs=embed, begin_state=states, merge_outputs=True, layout='TNC')
         print("\n\n%s\n\n" % outputs)
 
         pred = mx.sym.Reshape(outputs,
@@ -109,6 +109,9 @@ def train(args):
         print(pred)
 
         label = mx.sym.Reshape(label, shape=(-1,))
+
+#        arg_shape, output_shape, aux_shape = label.infer_shape(data=data)
+#        print("\n\n%s\n\n" % (arg_shape, output_shape, aux_shape))
 
 #        pred = outputs
         pred = mx.sym.SoftmaxOutput(data=pred, label=label, name='softmax')
@@ -175,13 +178,14 @@ def test(args):
     decoder.add(mx.rnn.DotAttentionCell())
 
 #    encoder_data = mx.sym.Variable('encoder_data')
-    decoder_data = mx.sym.Variable('decoder_data')
+#    decoder_data = mx.sym.Variable('decoder_data')
 
     # assert outputs.list_outputs() == ['rnn_stack4_t0_out_output', 'rnn_stack4_t1_out_output', 'rnn_stack4_t2_out_output']
     # args, outs, auxs = outputs.infer_shape(encoder_data=(10, 3, 50), decoder_data=(10, 3, 50))
 
     def sym_gen(seq_len):
         data = mx.sym.Variable('data')
+        print(data.asnumpy())
         label = mx.sym.Variable('softmax_label')
         embed = mx.sym.Embedding(data=data, input_dim=len(vocab),
                                  output_dim=args.num_embed, name='embed')
@@ -208,7 +212,7 @@ def test(args):
 
         return pred, ('data',), ('softmax_label',)
 
-    foo, bar, baz = sym_gen(10)
+    foo, bar, baz = sym_gen(60)
     print(foo)
     print(bar)
     print(baz)
