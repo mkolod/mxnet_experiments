@@ -71,8 +71,8 @@ def tokenize_text(fname, vocab=None, invalid_label=-1, start_label=0, sep_punctu
     return sentences, vocab
 
 def get_data(layout):
-    source_data = "./data/europarl-v7.es-en.es_small"  # ./data/ptb.train.txt
-    target_data = "./data/europarl-v7.es-en.en_small" # ./data/ptb.test.txt
+    source_data = "./data/europarl-v7.es-en.es_vsmall"  # ./data/ptb.train.txt
+    target_data = "./data/europarl-v7.es-en.en_vsmall" # ./data/ptb.test.txt
     train_sent, vocab = tokenize_text(source_data, start_label=start_label,
                                       invalid_label=invalid_label)
     val_sent, _ = tokenize_text(target_data, vocab=None, start_label=start_label, # vocab, start_label=start_label,
@@ -80,8 +80,8 @@ def get_data(layout):
   
     # only keep sentences of the same length, until the dual-bucketing issue is resolved
 
-    train_sent = train_sent[0:10000]
-    val_sent = val_sent[0:10000]
+#    train_sent = train_sent[0:25000]
+#    val_sent = val_sent[0:25000]
 
 #    train_sent, val_sent = zip(*filter(lambda x: len(x[0]) == len(x[1]), zip(train_sent, val_sent)))
 
@@ -101,14 +101,14 @@ def train(args):
 
     encoder = mx.rnn.SequentialRNNCell()
 
-    for i in range(args.num_layers):
-        encoder.add(mx.rnn.LSTMCell(args.num_hidden, prefix='rnn_encoder%d_' % i))
-        if i < args.num_layers - 1 and args.dropout > 0.0:
-            encoder.add(mx.rnn.DropoutCell(args.dropout, prefix='rnn_encoder%d_' % i))
-    encoder.add(mx.rnn.AttentionEncoderCell())
+#    for i in range(args.num_layers):
+#        encoder.add(mx.rnn.LSTMCell(args.num_hidden, prefix='rnn_encoder%d_' % i))
+#        if i < args.num_layers - 1 and args.dropout > 0.0:
+#            encoder.add(mx.rnn.DropoutCell(args.dropout, prefix='rnn_encoder%d_' % i))
+#    encoder.add(mx.rnn.AttentionEncoderCell())
 
-#    encoder = mx.rnn.FusedRNNCell(args.num_hidden, num_layers=args.num_layers, dropout=args.dropout,
-#                                   mode='lstm', bidirectional=args.bidirectional)
+    encoder = mx.rnn.FusedRNNCell(args.num_hidden, num_layers=args.num_layers, dropout=args.dropout,
+                                   mode='lstm', bidirectional=args.bidirectional)
 
     decoder = mx.rnn.SequentialRNNCell()
     for i in range(args.num_layers):
