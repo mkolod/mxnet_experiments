@@ -101,14 +101,14 @@ def train(args):
 
     encoder = mx.rnn.SequentialRNNCell()
 
-#    for i in range(args.num_layers):
-#        encoder.add(mx.rnn.LSTMCell(args.num_hidden, prefix='rnn_encoder%d_' % i))
-#        if i < args.num_layers - 1 and args.dropout > 0.0:
-#            encoder.add(mx.rnn.DropoutCell(args.dropout, prefix='rnn_encoder%d_' % i))
-#    encoder.add(mx.rnn.AttentionEncoderCell())
+    for i in range(args.num_layers):
+        encoder.add(mx.rnn.LSTMCell(args.num_hidden, prefix='rnn_encoder%d_' % i))
+        if i < args.num_layers - 1 and args.dropout > 0.0:
+            encoder.add(mx.rnn.DropoutCell(args.dropout, prefix='rnn_encoder%d_' % i))
+    encoder.add(mx.rnn.AttentionEncoderCell())
 
-    encoder = mx.rnn.FusedRNNCell(args.num_hidden, num_layers=args.num_layers, dropout=args.dropout,
-                                   mode='lstm', bidirectional=args.bidirectional)
+#    encoder = mx.rnn.FusedRNNCell(args.num_hidden, num_layers=args.num_layers, dropout=args.dropout,
+#                                   mode='lstm', bidirectional=args.bidirectional)
 
     decoder = mx.rnn.SequentialRNNCell()
     for i in range(args.num_layers):
