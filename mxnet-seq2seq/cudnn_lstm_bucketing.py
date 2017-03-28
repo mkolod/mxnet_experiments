@@ -80,15 +80,18 @@ def get_data(layout):
   
     # only keep sentences of the same length, until the dual-bucketing issue is resolved
 
-    train_sent, val_sent = zip(*filter(lambda x: len(x[0]) == len(x[1]), zip(train_sent, val_sent)))
+    train_sent = train_sent[0:10000]
+    val_sent = val_sent[0:10000]
+
+#    train_sent, val_sent = zip(*filter(lambda x: len(x[0]) == len(x[1]), zip(train_sent, val_sent)))
 
 
     # input should be reversed - this is a pure side effect
     # [i.reverse() for i in train_sent]
 
-    data_train  = mx.rnn.BucketSentenceIter(train_sent, args.batch_size, buckets=None, #buckets,
+    data_train  = mx.rnn.BucketSentenceIter(train_sent, args.batch_size, buckets=buckets,
                                             invalid_label=invalid_label, layout=layout)
-    data_val    = mx.rnn.BucketSentenceIter(val_sent, args.batch_size, buckets=None, #buckets,
+    data_val    = mx.rnn.BucketSentenceIter(val_sent, args.batch_size, buckets=buckets,
                                             invalid_label=invalid_label, layout=layout)
     return data_train, data_val, vocab
 
