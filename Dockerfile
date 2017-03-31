@@ -15,7 +15,7 @@ RUN apt-get update && apt-get -y upgrade && \
   vim
 
 # Build MxNet for Python
-RUN cd /root && git clone --recursive https://github.com/piiswrong/mxnet.git && cd mxnet && git checkout att && \
+RUN cd /root && git clone --recursive https://github.com/piiswrong/mxnet.git && cd mxnet && git checkout att && git checkout a1588b3d0198f6093140258d231a691a96374ad5 && \
 # https://github.com/dmlc/mxnet && cd mxnet && \
   cp make/config.mk . && \
   sed -i 's/USE_BLAS = atlas/USE_BLAS = openblas/g' config.mk && \

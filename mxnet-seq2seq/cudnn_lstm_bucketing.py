@@ -71,8 +71,8 @@ def tokenize_text(fname, vocab=None, invalid_label=-1, start_label=0, sep_punctu
     return sentences, vocab
 
 def get_data(layout):
-    source_data = "./data/europarl-v7.es-en.es_vsmall"  # ./data/ptb.train.txt
-    target_data = "./data/europarl-v7.es-en.en_vsmall" # ./data/ptb.test.txt
+    source_data = "./data/europarl-v7.es-en.es_small"  # ./data/ptb.train.txt
+    target_data = "./data/europarl-v7.es-en.en_small" # ./data/ptb.test.txt
     train_sent, vocab = tokenize_text(source_data, start_label=start_label,
                                       invalid_label=invalid_label)
     val_sent, _ = tokenize_text(target_data, vocab=None, start_label=start_label, # vocab, start_label=start_label,
