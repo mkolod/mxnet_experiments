@@ -93,6 +93,8 @@ def get_data(layout):
                                             invalid_label=invalid_label, layout=layout)
     data_val    = mx.rnn.BucketSentenceIter(val_sent, args.batch_size, buckets=buckets,
                                             invalid_label=invalid_label, layout=layout)
+ #   foo = data_train.next()
+ #   print(foo.data)
     return data_train, data_val, vocab
 
 
